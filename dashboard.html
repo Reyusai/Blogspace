@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Author Dashboard – BlogSpace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('blogspace_theme') || 'light'; } catch (e) {}
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main">
+      <a href="index.html" class="logo"><span class="logo-mark">B</span>BlogSpace</a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="index.html#latest">Explore</a></li>
+        <li><a href="index.html#categories">Categories</a></li>
+        <li class="auth-guest"><a href="login.html">Login</a></li>
+        <li class="auth-user"><a href="dashboard.html" class="active">Dashboard</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode"><i class="fa-solid fa-moon"></i></button>
+        <a href="create-blog.html" class="btn btn-primary">Write</a>
+        <button class="btn btn-ghost" data-action="logout" title="Sign out"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</button>
+        <button class="icon-btn menu-btn" id="menuToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navLinks"><i class="fa-solid fa-bars"></i></button>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container" style="padding-top: 40px; padding-bottom: 80px;">
+    <div class="dashboard-head">
+      <div class="user-badge">
+        <div class="avatar-lg" id="userAvatar">A</div>
+        <div>
+          <h1 id="userName" style="font-size: 1.8rem;">Loading author...</h1>
+          <p id="userEmail" style="color: var(--ink-soft); margin-top: 4px; font-size: 0.95rem;"></p>
+        </div>
+      </div>
+
+      <div class="dashboard-actions">
+        <a href="create-blog.html" class="btn btn-primary"><i class="fa-solid fa-pen-nib"></i> New Post</a>
+      </div>
+    </div>
+
+    <div class="dashboard-tabs">
+      <button class="dashboard-tab active" data-tab="all">All Posts (<span id="totalCount">0</span>)</button>
+      <button class="dashboard-tab" data-tab="published">Published (<span id="publishedCount">0</span>)</button>
+      <button class="dashboard-tab" data-tab="draft">Drafts (<span id="draftCount">0</span>)</button>
+    </div>
+
+    <div id="postsList">
+      <div class="skeleton" style="height: 90px; margin-bottom: 12px;"></div>
+      <div class="skeleton" style="height: 90px; margin-bottom: 12px;"></div>
+    </div>
+
+    <div class="empty" id="dashboardEmpty" hidden>
+      <i class="fa-solid fa-feather-pointed"></i>
+      <h3>No posts in this section yet</h3>
+      <p>Share your learnings, tutorial, or thought with the BlogSpace community.</p>
+      <a href="create-blog.html" class="btn btn-primary" style="margin-top: 14px;">Write your first article</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-bottom" style="margin-top: 0;">
+      © <span id="year"></span> BlogSpace. Demo project.
+    </div>
+  </footer>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+  <script src="storage.js"></script>
+  <script src="api.js"></script>
+  <script src="main.js"></script>
+  <script>
+    let myPosts = [];
+    let activeTab = 'all';
+
+    function renderDashboardPosts() {
+      const listEl = document.getElementById('postsList');
+      const emptyEl = document.getElementById('dashboardEmpty');
+      const filtered = myPosts.filter(p => activeTab === 'all' || p.status === activeTab);
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = '';
+        emptyEl.hidden = false;
+        return;
+      }
+
+      emptyEl.hidden = true;
+      listEl.innerHTML = filtered.map(post => {
+        const isDraft = post.status === 'draft';
+        const badgeClass = isDraft ? 'badge-draft' : 'badge-published';
+        return `
+          <div class="dashboard-item" id="post-${post.id}">
+            <div class="dashboard-item-info">
+              <h3>
+                <a href="${isDraft ? `create-blog.html?id=${post.id}` : `article.html?id=${post.id}`}">
+                  ${escapeHTML(post.title)}
+                </a>
+              </h3>
+              <div class="dashboard-item-meta">
+                <span class="badge ${badgeClass}">${escapeHTML(post.status)}</span>
+                <span><i class="fa-regular fa-folder"></i> ${escapeHTML(post.category)}</span>
+                <span><i class="fa-regular fa-calendar"></i> ${formatDate(post.created_at || post.date)}</span>
+                <span><i class="fa-regular fa-clock"></i> ${post.read_time || post.readTime || 1} min</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <a href="create-blog.html?id=${post.id}" class="btn btn-ghost" title="Edit post">
+                <i class="fa-solid fa-pen"></i> Edit
+              </a>
+              <button class="btn btn-ghost" onclick="handleDelete(${post.id}, '${escapeHTML(post.title).replace(/'/g, "\\'")}')" title="Delete post" style="color: #dc2626;">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function handleDelete(id, title) {
+      if (!confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        await window.api.deleteBlog(id);
+        showToast('Blog post deleted successfully.', 'success');
+        myPosts = myPosts.filter(p => p.id !== id);
+        updateCounts();
+        renderDashboardPosts();
+      } catch (err) {
+        showToast(err.message || 'Failed to delete post.', 'error');
+      }
+    }
+
+    function updateCounts() {
+      const published = myPosts.filter(p => p.status === 'published').length;
+      const drafts = myPosts.filter(p => p.status === 'draft').length;
+      document.getElementById('totalCount').textContent = myPosts.length;
+      document.getElementById('publishedCount').textContent = published;
+      document.getElementById('draftCount').textContent = drafts;
+    }
+
+    async function loadDashboard() {
+      if (!window.api || !window.api.isAuthenticated()) {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      const user = window.api.getUser();
+      document.getElementById('userName').textContent = user.name;
+      document.getElementById('userEmail').textContent = user.email;
+      document.getElementById('userAvatar').textContent = (user.name || 'U').charAt(0).toUpperCase();
+
+      try {
+        // Fetch the current user's own posts (published + drafts), all pages
+        let page = 1;
+        let totalPages = 1;
+        const collected = [];
+        do {
+          const response = await window.api.getMyBlogs({ page, limit: 50 });
+          collected.push(...(response.blogs || []));
+          totalPages = (response.pagination && response.pagination.totalPages) || 1;
+          page++;
+        } while (page <= totalPages);
+
+        myPosts = collected;
+        updateCounts();
+        renderDashboardPosts();
+      } catch (err) {
+        showToast(err.message || 'Could not load your posts.', 'error');
+        document.getElementById('postsList').innerHTML = '<p style="color: var(--ink-soft); text-align: center; padding: 24px;">Failed to load posts from server.</p>';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDashboard();
+
+      document.querySelectorAll('.dashboard-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+          document.querySelectorAll('.dashboard-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          activeTab = tab.dataset.tab;
+          renderDashboardPosts();
+        });
+      });
+    });
+  </script>
+</body>
+</html>

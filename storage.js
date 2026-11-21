@@ -59,9 +59,16 @@ function getPublishedPosts() {
 
 /* Session helper used by the navbar on every page */
 function getCurrentUser() {
+  if (window.api && typeof window.api.getUser === 'function') {
+    return window.api.getUser();
+  }
   return readJSON(KEYS.session, null);
 }
 
 function logoutUser() {
+  if (window.api && typeof window.api.logout === 'function') {
+    window.api.logout();
+  }
   localStorage.removeItem(KEYS.session);
+  localStorage.removeItem('blogspace_token');
 }

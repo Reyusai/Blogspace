@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login – BlogSpace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('blogspace_theme') || 'light'; } catch (e) {}
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main">
+      <a href="index.html" class="logo"><span class="logo-mark">B</span>BlogSpace</a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="index.html#latest">Explore</a></li>
+        <li><a href="index.html#categories">Categories</a></li>
+        <li class="auth-guest"><a href="login.html" class="active">Login</a></li>
+        <li class="auth-user" hidden><a href="dashboard.html">Dashboard</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode"><i class="fa-solid fa-moon"></i></button>
+        <a href="register.html" class="btn btn-primary auth-guest">Get started</a>
+        <a href="create-blog.html" class="btn btn-primary auth-user" hidden>Write</a>
+        <button class="icon-btn menu-btn" id="menuToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navLinks"><i class="fa-solid fa-bars"></i></button>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="auth-wrapper">
+      <div class="page-header">
+        <h1>Welcome back</h1>
+        <p>Sign in to your BlogSpace account</p>
+      </div>
+
+      <div class="form-card">
+        <form id="loginForm" autocomplete="on">
+          <div class="form-group">
+            <label for="email">Email address</label>
+            <input type="email" id="email" class="form-control" placeholder="you@example.com" required autocomplete="email">
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+
+          <div class="form-actions" style="justify-content: stretch;">
+            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn" style="width: 100%;">
+              <span>Sign in</span>
+            </button>
+          </div>
+        </form>
+
+        <div class="form-footer">
+          Don't have an account? <a href="register.html">Create one</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-bottom" style="margin-top: 0;">
+      © <span id="year"></span> BlogSpace. Demo project.
+    </div>
+  </footer>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+  <script src="storage.js"></script>
+  <script src="api.js"></script>
+  <script src="main.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Redirect to dashboard if already logged in
+      if (window.api && window.api.isAuthenticated()) {
+        window.location.href = 'dashboard.html';
+        return;
+      }
+
+      const form = document.getElementById('loginForm');
+      const submitBtn = document.getElementById('submitBtn');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+
+        submitBtn.disabled = true;
+        submitBtn.querySelector('span').textContent = 'Signing in...';
+
+        try {
+          await window.api.login(email, password);
+          showToast('Welcome back! Redirecting...', 'success');
+          setTimeout(() => {
+            window.location.href = 'dashboard.html';
+          }, 600);
+        } catch (err) {
+          showToast(err.message || 'Login failed', 'error');
+          submitBtn.disabled = false;
+          submitBtn.querySelector('span').textContent = 'Sign in';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

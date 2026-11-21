@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Article – BlogSpace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('blogspace_theme') || 'light'; } catch (e) {}
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main">
+      <a href="index.html" class="logo"><span class="logo-mark">B</span>BlogSpace</a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="index.html#latest">Explore</a></li>
+        <li><a href="index.html#categories">Categories</a></li>
+        <li class="auth-guest"><a href="login.html">Login</a></li>
+        <li class="auth-user" hidden><a href="dashboard.html">Dashboard</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode"><i class="fa-solid fa-moon"></i></button>
+        <a href="register.html" class="btn btn-primary auth-guest">Get started</a>
+        <a href="create-blog.html" class="btn btn-primary auth-user" hidden>Write</a>
+        <button class="icon-btn menu-btn" id="menuToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navLinks"><i class="fa-solid fa-bars"></i></button>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="article-container">
+      <div class="article-back-nav">
+        <a href="index.html" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.88rem;">
+          <i class="fa-solid fa-arrow-left"></i> Back to all articles
+        </a>
+      </div>
+
+      <div id="articleLoading">
+        <div class="skeleton" style="height: 48px; width: 85%; margin-bottom: 20px;"></div>
+        <div class="skeleton" style="height: 24px; width: 40%; margin-bottom: 30px;"></div>
+        <div class="skeleton" style="height: 380px; width: 100%; margin-bottom: 30px;"></div>
+      </div>
+
+      <article id="articleContent" hidden>
+        <header class="article-header">
+          <span class="tag" id="articleCategory">Technology</span>
+          <h1 id="articleTitle">Article Title</h1>
+          
+          <div class="meta" style="justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="avatar" id="articleAvatar">A</span>
+              <span id="articleAuthor" style="font-weight: 600; color: var(--ink);">Author Name</span>
+              <span class="meta-sep" id="articleDate">Oct 28, 2026</span>
+              <span class="meta-sep" id="articleReadTime">5 min read</span>
+            </div>
+
+            <div id="ownerActions" hidden>
+              <a href="#" id="editLink" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.88rem;">
+                <i class="fa-solid fa-pen"></i> Edit Article
+              </a>
+            </div>
+          </div>
+        </header>
+
+        <img id="articleCover" class="article-cover" alt="">
+
+        <div id="articleDescription" class="article-lead"></div>
+
+        <div id="articleBody" class="article-body"></div>
+      </article>
+
+      <div id="articleError" class="empty" hidden>
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <h3>Article not found</h3>
+        <p>This article does not exist, or has been unpublished by the author.</p>
+        <a href="index.html" class="btn btn-primary" style="margin-top: 14px;">Browse all articles</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-bottom" style="margin-top: 0;">
+      © <span id="year"></span> BlogSpace. Demo project.
+    </div>
+  </footer>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+  <script src="storage.js"></script>
+  <script src="api.js"></script>
+  <script src="main.js"></script>
+  <script>
+    async function loadArticle() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const id = urlParams.get('id');
+
+      const loadingEl = document.getElementById('articleLoading');
+      const contentEl = document.getElementById('articleContent');
+      const errorEl = document.getElementById('articleError');
+
+      if (!id) {
+        loadingEl.hidden = true;
+        errorEl.hidden = false;
+        return;
+      }
+
+      try {
+        const res = await window.api.getBlog(id);
+        const blog = res.blog;
+
+        document.title = `${blog.title} – BlogSpace`;
+        document.getElementById('articleTitle').textContent = blog.title;
+        document.getElementById('articleCategory').textContent = blog.category || 'General';
+        
+        const authorName = blog.author || 'Anonymous';
+        document.getElementById('articleAuthor').textContent = authorName;
+        document.getElementById('articleAvatar').textContent = authorName.charAt(0).toUpperCase();
+        document.getElementById('articleDate').textContent = formatDate(blog.created_at || blog.date);
+        document.getElementById('articleReadTime').textContent = `${blog.read_time || blog.readTime || 1} min read`;
+
+        const coverImg = document.getElementById('articleCover');
+        if (coverImg) {
+          if (blog.image) {
+            // Remove the cover only if a real image fails to load
+            coverImg.onerror = () => coverImg.remove();
+            coverImg.src = blog.image;
+            coverImg.alt = blog.title;
+          } else {
+            coverImg.remove();
+          }
+        }
+
+        const descEl = document.getElementById('articleDescription');
+        if (blog.description) {
+          descEl.textContent = blog.description;
+        } else {
+          descEl.remove();
+        }
+
+        const bodyEl = document.getElementById('articleBody');
+        if (blog.content) {
+          // Render paragraphs
+          const paragraphs = blog.content.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+          bodyEl.innerHTML = paragraphs.map(p => `<p>${escapeHTML(p)}</p>`).join('');
+        } else {
+          bodyEl.innerHTML = `<p style="color: var(--ink-soft); font-style: italic;">No additional content was provided for this post.</p>`;
+        }
+
+        // Show edit button if current authenticated user is the owner
+        const currentUser = window.api.getUser();
+        if (currentUser && currentUser.id === blog.author_id) {
+          const ownerActions = document.getElementById('ownerActions');
+          const editLink = document.getElementById('editLink');
+          ownerActions.hidden = false;
+          editLink.href = `create-blog.html?id=${blog.id}`;
+        }
+
+        loadingEl.hidden = true;
+        contentEl.hidden = false;
+      } catch (err) {
+        loadingEl.hidden = true;
+        errorEl.hidden = false;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadArticle);
+  </script>
+</body>
+</html>
