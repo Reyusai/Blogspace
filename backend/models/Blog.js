@@ -282,7 +282,8 @@ async function findPublished({ page = 1, limit = 10, category = null, search = n
   const query = { status: 'published' };
 
   if (category && category !== 'All') {
-    query.category = new RegExp(`^${category.trim()}$`, 'i');
+    const safeCat = category.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    query.category = new RegExp(`^${safeCat}$`, 'i');
   }
 
   if (search && search.trim().length > 0) {

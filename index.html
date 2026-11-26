@@ -78,6 +78,11 @@
         <p>Try another title or pick a different category.</p>
         <button class="btn btn-ghost" id="resetFilters">Clear filters</button>
       </div>
+      <div class="pagination" id="homePagination" style="display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 36px;" hidden>
+        <button class="btn btn-ghost" id="prevPageBtn" aria-label="Previous page"><i class="fa-solid fa-chevron-left"></i> Previous</button>
+        <span id="pageIndicator" style="font-size: 0.95rem; font-weight: 500; color: var(--ink-soft);">Page 1 of 1</span>
+        <button class="btn btn-ghost" id="nextPageBtn" aria-label="Next page">Next <i class="fa-solid fa-chevron-right"></i></button>
+      </div>
     </section>
 
     <section class="cta-band container">

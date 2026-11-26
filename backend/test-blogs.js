@@ -177,6 +177,24 @@ async function runBlogTests() {
       ok('Text search (?search=open-source) matched correct article by description');
     } else fail('Text search by description failed');
 
+    // 1.3b Search with no results
+    const noResultSearch = await apiRequest({ method: 'GET', path: '/api/blogs?search=nonexistenttermxyz' });
+    if (noResultSearch.status === 200 && noResultSearch.data?.blogs?.length === 0) {
+      ok('Search with no matching results returns empty list (HTTP 200)');
+    } else fail('Search with no results failed');
+
+    // 1.3c Combined Category and Search Filter
+    const comboRes = await apiRequest({ method: 'GET', path: '/api/blogs?category=Technology&search=syntax' });
+    if (comboRes.status === 200 && comboRes.data?.blogs?.length === 1 && comboRes.data.blogs[0].category === 'Technology') {
+      ok('Combined filter (?category=Technology&search=syntax) correctly matches single article');
+    } else fail('Combined category and search filter failed');
+
+    // 1.3d Regex Special Characters Safety
+    const regexRes = await apiRequest({ method: 'GET', path: '/api/blogs?search=' + encodeURIComponent('.*+?^${}()|[]\\') });
+    if (regexRes.status === 200 && Array.isArray(regexRes.data?.blogs)) {
+      ok('Search safely escapes regex special characters without crashing or injection');
+    } else fail('Regex character search threw an error or failed');
+
     // 1.4 Pagination Metadata and Max Limit Enforcement
     const pageRes = await apiRequest({ method: 'GET', path: '/api/blogs?page=1&limit=3' });
     if (

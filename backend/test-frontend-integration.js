@@ -98,8 +98,8 @@ async function runFrontendIntegrationTests() {
   console.log('═'.repeat(60));
 
   await initializeDatabase();
-  await User.deleteMany({ email: 'isha.patel@example.com' });
-  await Blog.deleteMany({ author: 'Isha Patel' });
+  await User.deleteMany({ email: { $in: ['integration@blogspace.io', 'isha.patel@example.com'] } });
+  await Blog.deleteMany({ author: { $in: ['Integration User', 'Isha Patel'] } });
 
   await new Promise((resolve) => {
     serverInstance = app.listen(0, () => {
@@ -298,8 +298,8 @@ async function runFrontendIntegrationTests() {
 
   } finally {
     try {
-      await User.deleteMany({ email: 'isha.patel@example.com' });
-      await Blog.deleteMany({ author: 'Isha Patel' });
+      await User.deleteMany({ email: { $in: ['integration@blogspace.io', 'isha.patel@example.com'] } });
+      await Blog.deleteMany({ author: { $in: ['Integration User', 'Isha Patel'] } });
     } catch (e) {}
     if (serverInstance) serverInstance.close();
     await closeDatabase();
