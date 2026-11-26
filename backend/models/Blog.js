@@ -1,22 +1,22 @@
 /**
- * models/Blog.js – Blogs table schema, seeding, and database queries
- * ────────────────────────────────────────────────────────────────
+ * models/Blog.js – Blogs collection schema, seeding, and database queries
+ * ────────────────────────────────────────────────────────────────────────
  * WHY THIS FILE EXISTS:
  *   Acts as the Data Access Layer (DAL) for blogs.
- *   Provides clean helper functions for all CRUD operations, ensuring
- *   parameterized SQL is used everywhere.
+ *   Provides helper functions for all CRUD operations using Mongoose.
  *
  * DESIGN DECISIONS:
- *   • All listing queries enforce `status = 'published'` to protect drafts.
- *   • Search inspects both `title` and `description` using lowercase LIKE.
+ *   • Listing queries strictly enforce `status: 'published'` to protect drafts.
+ *   • Search inspects both `title` and `description` using case-insensitive regex.
  *   • Safe pagination defaults: page >= 1, 1 <= limit <= 50.
- *   • Never trusts client-supplied author information.
+ *   • Preserves exact API contract: translates MongoDB `_id` to string `id`.
+ *   • Seed posts have `author_id: null` and are immutable.
  */
 
-const { dbRun, dbGet, dbAll } = require('../config/database');
+const mongoose = require('mongoose');
 
 // ──────────────────────────────────────────────
-// Seed data – copied from frontend storage.js SEED_POSTS
+// Seed data – 8 curated original posts
 // ──────────────────────────────────────────────
 const SEED_POSTS = [
   {
@@ -118,177 +118,230 @@ const SEED_POSTS = [
 ];
 
 // ──────────────────────────────────────────────
-// Table creation
+// Schema Definition
 // ──────────────────────────────────────────────
+const blogSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: [true, 'Title is required'],
+      maxlength: [255, 'Title cannot exceed 255 characters'],
+      trim: true
+    },
+    description: {
+      type: String,
+      default: '',
+      maxlength: [1000, 'Description cannot exceed 1000 characters'],
+      trim: true
+    },
+    content: {
+      type: String,
+      default: ''
+    },
+    category: {
+      type: String,
+      default: 'Technology',
+      trim: true
+    },
+    author_id: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+      index: true
+    },
+    author: {
+      type: String,
+      required: [true, 'Author is required'],
+      trim: true
+    },
+    image: {
+      type: String,
+      default: '',
+      trim: true
+    },
+    status: {
+      type: String,
+      enum: {
+        values: ['published', 'draft'],
+        message: 'Status must be either "published" or "draft"'
+      },
+      default: 'published',
+      index: true
+    },
+    featured: {
+      type: Number,
+      default: 0
+    },
+    read_time: {
+      type: Number,
+      default: 1
+    },
+    created_at: {
+      type: Date,
+      default: Date.now
+    },
+    updated_at: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  {
+    timestamps: false,
+    versionKey: false
+  }
+);
 
-async function createBlogsTable() {
-  await dbRun(`
-    CREATE TABLE IF NOT EXISTS blogs (
-      id          INTEGER  PRIMARY KEY AUTOINCREMENT,
-      title       TEXT     NOT NULL,
-      description TEXT,
-      content     TEXT,
-      category    TEXT,
-      author_id   INTEGER,
-      author      TEXT,
-      image       TEXT,
-      status      TEXT     DEFAULT 'published' CHECK(status IN ('published', 'draft')),
-      featured    INTEGER  DEFAULT 0,
-      read_time   INTEGER  DEFAULT 1,
-      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL
-    )
-  `);
-  console.log('  ✓ blogs table ready');
+blogSchema.index({ status: 1, featured: -1, created_at: -1 });
+
+const Blog = mongoose.models.Blog || mongoose.model('Blog', blogSchema);
+
+/**
+ * Transform a Mongoose blog document or raw object into standard API response shape
+ */
+function transformBlog(doc) {
+  if (!doc) return null;
+  const raw = doc.toObject ? doc.toObject() : { ...doc };
+  return {
+    id: raw._id ? raw._id.toString() : raw.id,
+    title: raw.title,
+    description: raw.description || '',
+    content: raw.content || '',
+    category: raw.category || 'Technology',
+    author_id: raw.author_id ? raw.author_id.toString() : null,
+    author: raw.author,
+    image: raw.image || '',
+    status: raw.status || 'published',
+    featured: raw.featured ? 1 : 0,
+    read_time: raw.read_time || 1,
+    created_at: raw.created_at ? (typeof raw.created_at === 'string' ? raw.created_at : raw.created_at.toISOString()) : new Date().toISOString(),
+    updated_at: raw.updated_at ? (typeof raw.updated_at === 'string' ? raw.updated_at : raw.updated_at.toISOString()) : new Date().toISOString()
+  };
 }
 
-// ──────────────────────────────────────────────
-// Idempotent seeding
-// ──────────────────────────────────────────────
+/**
+ * Initialize blogs collection
+ */
+async function createBlogsTable() {
+  await Blog.init();
+  console.log('  ✓ blogs collection ready');
+}
 
+/**
+ * Idempotent seeding for the 8 original posts
+ */
 async function seedBlogs() {
   let inserted = 0;
 
   for (const post of SEED_POSTS) {
-    const existing = await dbGet(
-      'SELECT id FROM blogs WHERE title = ? AND author_id IS NULL',
-      [post.title]
-    );
+    const existing = await Blog.findOne({
+      title: post.title,
+      author_id: null
+    }).exec();
 
     if (!existing) {
-      await dbRun(
-        `INSERT INTO blogs
-           (title, description, content, category, author_id, author,
-            image, status, featured, read_time, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
-        [
-          post.title,
-          post.description,
-          post.content,
-          post.category,
-          post.author,
-          post.image,
-          post.status,
-          post.featured,
-          post.readTime,
-          post.date
-        ]
-      );
+      await Blog.create({
+        title: post.title,
+        description: post.description,
+        content: post.content,
+        category: post.category,
+        author_id: null,
+        author: post.author,
+        image: post.image,
+        status: post.status,
+        featured: post.featured ? 1 : 0,
+        read_time: post.readTime,
+        created_at: new Date(post.date),
+        updated_at: new Date(post.date)
+      });
       inserted++;
     }
   }
 
-  const total = await dbGet('SELECT COUNT(*) as count FROM blogs');
-  console.log(`  ✓ Blog seeding: ${inserted} new, ${total.count} total posts in database`);
+  const total = await Blog.countDocuments().exec();
+  console.log(`  ✓ Blog seeding: ${inserted} new, ${total} total posts in database`);
 }
 
-// ──────────────────────────────────────────────
-// Query & Data Access Helpers
-// ──────────────────────────────────────────────
-
 /**
- * Find a blog post by its primary ID.
- * Returns the blog row or null if not found.
+ * Find a blog post by its primary ID
  */
 async function findById(id) {
-  const row = await dbGet('SELECT * FROM blogs WHERE id = ?', [id]);
-  return row || null;
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    return null;
+  }
+  const blog = await Blog.findById(id).exec();
+  return transformBlog(blog);
 }
 
 /**
- * Retrieve published blogs with filtering, searching, and pagination.
- * NEVER returns drafts.
+ * Retrieve published blogs with filtering, searching, and pagination
  */
-async function findPublished({ page = 1, limit = 10, category = null, search = null }) {
-  // Normalize pagination parameters
+async function findPublished({ page = 1, limit = 10, category = null, search = null } = {}) {
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
   const offset = (pageNum - 1) * limitNum;
 
-  // Base filter: strictly published
-  const conditions = ["status = 'published'"];
-  const params = [];
+  const query = { status: 'published' };
 
-  // Category filter
   if (category && category !== 'All') {
-    conditions.push('LOWER(category) = LOWER(?)');
-    params.push(category.trim());
+    query.category = new RegExp(`^${category.trim()}$`, 'i');
   }
 
-  // Search filter (across title and description)
   if (search && search.trim().length > 0) {
-    conditions.push('(LOWER(title) LIKE ? OR LOWER(description) LIKE ?)');
-    const term = `%${search.trim().toLowerCase()}%`;
-    params.push(term, term);
+    const term = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(term, 'i');
+    query.$or = [{ title: regex }, { description: regex }];
   }
 
-  const whereClause = `WHERE ${conditions.join(' AND ')}`;
+  const total = await Blog.countDocuments(query).exec();
+  const rawBlogs = await Blog.find(query)
+    .sort({ featured: -1, created_at: -1, _id: -1 })
+    .skip(offset)
+    .limit(limitNum)
+    .exec();
 
-  // Total count query
-  const countRow = await dbGet(
-    `SELECT COUNT(*) as total FROM blogs ${whereClause}`,
-    params
-  );
-  const total = countRow ? countRow.total : 0;
-
-  // Data query with ordering and pagination
-  const dataParams = [...params, limitNum, offset];
-  const blogs = await dbAll(
-    `SELECT id, title, description, content, category, author_id, author,
-            image, status, featured, read_time, created_at, updated_at
-     FROM blogs
-     ${whereClause}
-     ORDER BY featured DESC, created_at DESC, id DESC
-     LIMIT ? OFFSET ?`,
-    dataParams
-  );
+  const blogs = rawBlogs.map(transformBlog);
 
   return {
     blogs,
     total,
     page: pageNum,
     limit: limitNum,
-    totalPages: Math.ceil(total / limitNum)
+    totalPages: Math.ceil(total / limitNum) || 1
   };
 }
 
 /**
- * Retrieve ALL posts (published + drafts) owned by one author, with pagination.
- * Only ever called with the authenticated user's own id.
+ * Retrieve ALL posts (published + drafts) owned by one author, with pagination
  */
 async function findByAuthor(author_id, { page = 1, limit = 50 } = {}) {
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 50));
   const offset = (pageNum - 1) * limitNum;
 
-  const countRow = await dbGet(
-    'SELECT COUNT(*) as total FROM blogs WHERE author_id = ?',
-    [author_id]
-  );
-  const total = countRow ? countRow.total : 0;
+  // Query by author_id (matching string or ObjectId)
+  const authorQuery = mongoose.Types.ObjectId.isValid(author_id)
+    ? { author_id: { $in: [author_id, new mongoose.Types.ObjectId(author_id)] } }
+    : { author_id };
 
-  const blogs = await dbAll(
-    `SELECT id, title, description, content, category, author_id, author,
-            image, status, featured, read_time, created_at, updated_at
-     FROM blogs
-     WHERE author_id = ?
-     ORDER BY created_at DESC, id DESC
-     LIMIT ? OFFSET ?`,
-    [author_id, limitNum, offset]
-  );
+  const total = await Blog.countDocuments(authorQuery).exec();
+  const rawBlogs = await Blog.find(authorQuery)
+    .sort({ created_at: -1, _id: -1 })
+    .skip(offset)
+    .limit(limitNum)
+    .exec();
+
+  const blogs = rawBlogs.map(transformBlog);
 
   return {
     blogs,
     total,
     page: pageNum,
     limit: limitNum,
-    totalPages: Math.ceil(total / limitNum)
+    totalPages: Math.ceil(total / limitNum) || 1
   };
 }
 
 /**
- * Insert a new blog post.
+ * Insert a new blog post
  */
 async function createBlog({
   title,
@@ -302,39 +355,32 @@ async function createBlog({
   featured = 0,
   read_time = 1
 }) {
-  const result = await dbRun(
-    `INSERT INTO blogs
-       (title, description, content, category, author_id, author,
-        image, status, featured, read_time)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      title,
-      description,
-      content,
-      category,
-      author_id,
-      author,
-      image,
-      status,
-      featured ? 1 : 0,
-      read_time
-    ]
-  );
+  const newBlog = await Blog.create({
+    title,
+    description,
+    content,
+    category,
+    author_id,
+    author,
+    image,
+    status,
+    featured: featured ? 1 : 0,
+    read_time,
+    created_at: new Date(),
+    updated_at: new Date()
+  });
 
-  return await findById(result.lastID);
+  return transformBlog(newBlog);
 }
 
 /**
- * Update an existing blog post.
- * Enforces ownership directly in the SQL WHERE condition (id = ? AND author_id = ?).
- * Automatically updates `updated_at` to CURRENT_TIMESTAMP.
- *
- * @param {number} id - Blog ID
- * @param {number} author_id - Authenticated user's ID
- * @param {Object} fieldsToUpdate - Whitelisted fields to modify
- * @returns {Promise<Object|null>} Updated blog post or null if no row matched
+ * Update an existing blog post
  */
 async function updateBlog(id, author_id, fieldsToUpdate) {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    return null;
+  }
+
   const allowed = [
     'title',
     'description',
@@ -346,56 +392,72 @@ async function updateBlog(id, author_id, fieldsToUpdate) {
     'read_time'
   ];
 
-  const setClauses = [];
-  const params = [];
-
+  const updateDoc = {};
   for (const key of allowed) {
     if (fieldsToUpdate[key] !== undefined) {
-      setClauses.push(`${key} = ?`);
       if (key === 'featured') {
-        params.push(fieldsToUpdate[key] ? 1 : 0);
+        updateDoc[key] = fieldsToUpdate[key] ? 1 : 0;
       } else {
-        params.push(fieldsToUpdate[key]);
+        updateDoc[key] = fieldsToUpdate[key];
       }
     }
   }
 
-  if (setClauses.length === 0) {
+  if (Object.keys(updateDoc).length === 0) {
     return await findById(id);
   }
 
-  setClauses.push('updated_at = CURRENT_TIMESTAMP');
-  params.push(id, author_id);
+  updateDoc.updated_at = new Date();
 
-  const result = await dbRun(
-    `UPDATE blogs SET ${setClauses.join(', ')} WHERE id = ? AND author_id = ?`,
-    params
-  );
+  const authorFilter = mongoose.Types.ObjectId.isValid(author_id)
+    ? { $in: [author_id, new mongoose.Types.ObjectId(author_id)] }
+    : author_id;
 
-  if (result.changes === 0) {
+  const updated = await Blog.findOneAndUpdate(
+    { _id: id, author_id: authorFilter },
+    { $set: updateDoc },
+    { returnDocument: 'after' }
+  ).exec();
+
+  if (!updated) {
     return null;
   }
 
-  return await findById(id);
+  return transformBlog(updated);
 }
 
 /**
- * Delete a blog post by ID.
- * Enforces ownership directly in the SQL WHERE condition (id = ? AND author_id = ?).
- *
- * @param {number} id - Blog ID
- * @param {number} author_id - Authenticated user's ID
- * @returns {Promise<boolean>} True if a row was deleted, false otherwise
+ * Delete a blog post by ID
  */
 async function deleteBlog(id, author_id) {
-  const result = await dbRun(
-    'DELETE FROM blogs WHERE id = ? AND author_id = ?',
-    [id, author_id]
-  );
-  return result.changes > 0;
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    return false;
+  }
+
+  const authorFilter = mongoose.Types.ObjectId.isValid(author_id)
+    ? { $in: [author_id, new mongoose.Types.ObjectId(author_id)] }
+    : author_id;
+
+  const result = await Blog.deleteOne({
+    _id: id,
+    author_id: authorFilter
+  }).exec();
+
+  return result.deletedCount > 0;
 }
 
+Blog.createBlogsTable = createBlogsTable;
+Blog.seedBlogs = seedBlogs;
+Blog.findByIdCustom = findById;
+Blog.findPublished = findPublished;
+Blog.findByAuthor = findByAuthor;
+Blog.createBlog = createBlog;
+Blog.updateBlog = updateBlog;
+Blog.deleteBlog = deleteBlog;
+Blog.SEED_POSTS = SEED_POSTS;
+
 module.exports = {
+  Blog,
   createBlogsTable,
   seedBlogs,
   findById,

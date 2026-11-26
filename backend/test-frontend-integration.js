@@ -17,9 +17,6 @@
 const path = require('path');
 const fs = require('fs');
 
-// Point to dedicated test database
-const TEST_DB_PATH = './blogspace.test.db';
-process.env.DB_PATH = TEST_DB_PATH;
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'frontend_integration_test_secret_2026';
 process.env.JWT_EXPIRES_IN = '1h';
@@ -28,6 +25,8 @@ require('dotenv').config();
 
 const http = require('http');
 const { initializeDatabase, closeDatabase } = require('./config/database');
+const { User } = require('./models/User');
+const { Blog } = require('./models/Blog');
 const app = require('./server');
 
 let passed = 0;
@@ -99,6 +98,8 @@ async function runFrontendIntegrationTests() {
   console.log('═'.repeat(60));
 
   await initializeDatabase();
+  await User.deleteMany({ email: 'isha.patel@example.com' });
+  await Blog.deleteMany({ author: 'Isha Patel' });
 
   await new Promise((resolve) => {
     serverInstance = app.listen(0, () => {
@@ -153,7 +154,9 @@ async function runFrontendIntegrationTests() {
       path: '/api/blogs?page=1&limit=10'
     });
 
+    let firstSeedId = null;
     if (blogsRes.status === 200 && blogsRes.data?.blogs?.length === 8) {
+      firstSeedId = blogsRes.data.blogs[0].id;
       ok('Homepage loads all 8 published seed articles from backend API');
     } else fail('Homepage blog fetch failed');
 
@@ -181,11 +184,11 @@ async function runFrontendIntegrationTests() {
     console.log('\n── Step 4: Article Detail View Flow ──');
     const articleRes = await apiRequest({
       method: 'GET',
-      path: '/api/blogs/1'
+      path: `/api/blogs/${firstSeedId}`
     });
 
-    if (articleRes.status === 200 && articleRes.data?.blog?.id === 1) {
-      ok('Full article view loads post #1 with complete details');
+    if (articleRes.status === 200 && articleRes.data?.blog?.id === firstSeedId) {
+      ok('Full article view loads seed post with complete details');
     } else fail('Full article view failed');
 
     // -------------------------------------------------------------
@@ -294,18 +297,13 @@ async function runFrontendIntegrationTests() {
     } else fail('Deleted article still exists');
 
   } finally {
+    try {
+      await User.deleteMany({ email: 'isha.patel@example.com' });
+      await Blog.deleteMany({ author: 'Isha Patel' });
+    } catch (e) {}
     if (serverInstance) serverInstance.close();
     await closeDatabase();
-
-    const resolvedTestDb = path.resolve(__dirname, TEST_DB_PATH);
-    if (fs.existsSync(resolvedTestDb)) {
-      try {
-        fs.unlinkSync(resolvedTestDb);
-        console.log('\n🧹 Isolated test database removed.');
-      } catch (err) {
-        console.warn('Note: Could not unlink test DB:', err.message);
-      }
-    }
+    console.log('\n🧹 Integration test data removed.');
   }
 
   console.log('\n' + '═'.repeat(60));

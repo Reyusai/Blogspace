@@ -19,6 +19,7 @@
  *   • Draft posts are never leaked to the public or other users.
  */
 
+const mongoose = require('mongoose');
 const Blog = require('../models/Blog');
 
 // Valid statuses defined in database CHECK constraint
@@ -35,14 +36,15 @@ const LIMITS = {
 };
 
 /**
- * Helper to validate positive integer IDs
+ * Helper to validate MongoDB ObjectId strings
  */
-function parsePositiveInt(val) {
-  const parsed = parseInt(val, 10);
-  if (isNaN(parsed) || parsed <= 0 || String(parsed) !== String(val).trim()) {
+function validateObjectId(val) {
+  if (!val || typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  if (!mongoose.Types.ObjectId.isValid(trimmed) || !/^[0-9a-fA-F]{24}$/.test(trimmed)) {
     return null;
   }
-  return parsed;
+  return trimmed;
 }
 
 /**
@@ -114,11 +116,11 @@ async function getMyBlogs(req, res, next) {
  */
 async function getBlogById(req, res, next) {
   try {
-    const id = parsePositiveInt(req.params.id);
+    const id = validateObjectId(req.params.id);
     if (!id) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid blog ID. Must be a positive integer.'
+        message: 'Invalid blog ID format.'
       });
     }
 
@@ -140,7 +142,7 @@ async function getBlogById(req, res, next) {
     }
 
     // If draft: only the authenticated author can view it
-    const isOwner = req.user && req.user.id === blog.author_id;
+    const isOwner = req.user && String(req.user.id) === String(blog.author_id);
     if (isOwner) {
       return res.status(200).json({
         success: true,
@@ -312,11 +314,11 @@ async function createBlog(req, res, next) {
  */
 async function updateBlog(req, res, next) {
   try {
-    const id = parsePositiveInt(req.params.id);
+    const id = validateObjectId(req.params.id);
     if (!id) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid blog ID. Must be a positive integer.'
+        message: 'Invalid blog ID format.'
       });
     }
 
@@ -329,7 +331,7 @@ async function updateBlog(req, res, next) {
     }
 
     // Prevent modifying original seed posts (author_id IS NULL)
-    if (blog.author_id === null) {
+    if (blog.author_id === null || blog.author_id === undefined) {
       return res.status(403).json({
         success: false,
         message: 'Original seeded posts are read-only and cannot be modified.'
@@ -337,7 +339,7 @@ async function updateBlog(req, res, next) {
     }
 
     // Enforce ownership: only the author can update
-    if (blog.author_id !== req.user.id) {
+    if (String(blog.author_id) !== String(req.user.id)) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to modify this blog post.'
@@ -499,11 +501,11 @@ async function updateBlog(req, res, next) {
  */
 async function deleteBlog(req, res, next) {
   try {
-    const id = parsePositiveInt(req.params.id);
+    const id = validateObjectId(req.params.id);
     if (!id) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid blog ID. Must be a positive integer.'
+        message: 'Invalid blog ID format.'
       });
     }
 
@@ -516,7 +518,7 @@ async function deleteBlog(req, res, next) {
     }
 
     // Prevent deleting original seed posts
-    if (blog.author_id === null) {
+    if (blog.author_id === null || blog.author_id === undefined) {
       return res.status(403).json({
         success: false,
         message: 'Original seeded posts cannot be deleted.'
@@ -524,7 +526,7 @@ async function deleteBlog(req, res, next) {
     }
 
     // Enforce ownership
-    if (blog.author_id !== req.user.id) {
+    if (String(blog.author_id) !== String(req.user.id)) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to delete this blog post.'

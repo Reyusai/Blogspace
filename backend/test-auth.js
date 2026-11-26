@@ -13,9 +13,6 @@
 const path = require('path');
 const fs = require('fs');
 
-// Point to dedicated test database BEFORE requiring any application code
-const TEST_DB_PATH = './blogspace.test.db';
-process.env.DB_PATH = TEST_DB_PATH;
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test_suite_jwt_secret_blogspace_super_safe_key_2026';
 process.env.JWT_EXPIRES_IN = '1h';
@@ -26,7 +23,8 @@ const http = require('http');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const { initializeDatabase, closeDatabase, dbGet } = require('./config/database');
+const { initializeDatabase, closeDatabase } = require('./config/database');
+const { User } = require('./models/User');
 const app = require('./server');
 
 let passed = 0;
@@ -101,8 +99,9 @@ async function runAuthTests() {
   console.log('═'.repeat(60));
 
   // Initialize test database
-  console.log('📦 Initializing isolated test database at', TEST_DB_PATH);
+  console.log('📦 Initializing test database');
   await initializeDatabase();
+  await User.deleteMany({ email: { $regex: /example\.com$/i } });
 
   // Start test HTTP server on random free port
   await new Promise((resolve) => {
@@ -152,7 +151,7 @@ async function runAuthTests() {
     }
 
     // 1.2 Verify Password is stored as a Bcrypt hash in DB
-    const dbUser = await dbGet('SELECT * FROM users WHERE email = ?', ['aarav.sharma@example.com']);
+    const dbUser = await User.findOne({ email: 'aarav.sharma@example.com' });
     if (dbUser && dbUser.password.startsWith('$2') && dbUser.password !== 'Password123!') {
       ok('Password stored in database as a secure bcrypt hash');
     } else {
@@ -358,22 +357,15 @@ async function runAuthTests() {
     } else fail('Password hash exposed in GET /api/auth/me!');
 
   } finally {
-    // Teardown test server and database
+    // Teardown test server and clean up test data
+    try {
+      await User.deleteMany({ email: { $regex: /example\.com$/i } });
+    } catch (e) {}
     if (serverInstance) {
       serverInstance.close();
     }
     await closeDatabase();
-
-    // Clean up the isolated test database file
-    const resolvedTestDb = path.resolve(__dirname, TEST_DB_PATH);
-    if (fs.existsSync(resolvedTestDb)) {
-      try {
-        fs.unlinkSync(resolvedTestDb);
-        console.log('\n🧹 Isolated test database safely removed:', TEST_DB_PATH);
-      } catch (err) {
-        console.warn('Note: Could not remove test database file:', err.message);
-      }
-    }
+    console.log('\n🧹 Test users safely cleaned up');
   }
 
   // ── Summary ──

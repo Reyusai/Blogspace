@@ -13,9 +13,6 @@
 const path = require('path');
 const fs = require('fs');
 
-// Point to dedicated test database BEFORE requiring application code
-const TEST_DB_PATH = './blogspace.test.db';
-process.env.DB_PATH = TEST_DB_PATH;
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test_suite_jwt_secret_blogspace_super_safe_key_2026';
 process.env.JWT_EXPIRES_IN = '1h';
@@ -24,8 +21,9 @@ require('dotenv').config();
 
 const http = require('http');
 const jwt = require('jsonwebtoken');
-const { initializeDatabase, closeDatabase, dbRun, dbGet } = require('./config/database');
-const Blog = require('./models/Blog');
+const { initializeDatabase, closeDatabase } = require('./config/database');
+const { Blog } = require('./models/Blog');
+const { User } = require('./models/User');
 const app = require('./server');
 
 let passed = 0;
@@ -99,8 +97,10 @@ async function runBlogTests() {
   console.log('\n🧪 BlogSpace Phase 4 – Blog CRUD API Tests & Security Audit');
   console.log('═'.repeat(60));
 
-  console.log('📦 Initializing isolated test database at', TEST_DB_PATH);
+  console.log('📦 Initializing test database');
   await initializeDatabase();
+  await User.deleteMany({ email: { $in: ['author1@test.com', 'author2@test.com'] } });
+  await Blog.deleteMany({ author: { $in: ['Author One', 'Author Two'] } });
 
   await new Promise((resolve) => {
     serverInstance = app.listen(0, () => {
@@ -335,8 +335,8 @@ async function runBlogTests() {
 
     // 3.2 Invalid ID format rejected
     const invalidIdRes = await apiRequest({ method: 'GET', path: '/api/blogs/abc' });
-    if (invalidIdRes.status === 400 && invalidIdRes.data?.message.includes('positive integer')) {
-      ok('Non-numeric ID /api/blogs/abc rejected with HTTP 400');
+    if (invalidIdRes.status === 400 && invalidIdRes.data?.message.includes('Invalid blog ID')) {
+      ok('Invalid ID /api/blogs/abc rejected with HTTP 400');
     } else fail('Non-numeric ID not rejected with 400');
 
     const negativeIdRes = await apiRequest({ method: 'GET', path: '/api/blogs/-5' });
@@ -344,7 +344,7 @@ async function runBlogTests() {
     else fail('Negative ID not rejected with 400');
 
     // 3.3 Non-existent ID returns 404
-    const notFoundRes = await apiRequest({ method: 'GET', path: '/api/blogs/99999' });
+    const notFoundRes = await apiRequest({ method: 'GET', path: '/api/blogs/507f1f77bcf86cd799439011' });
     if (notFoundRes.status === 404) ok('Non-existent ID returns HTTP 404');
     else fail('Non-existent ID did not return 404');
 
@@ -459,9 +459,11 @@ async function runBlogTests() {
     } else fail('Author was altered during update!');
 
     // 4.5 Original seed posts cannot be updated
+    const allSeeds = await Blog.find({ author_id: null });
+    const seedPostId = allSeeds[0]._id.toString();
     const seedUpdate = await apiRequest({
       method: 'PUT',
-      path: '/api/blogs/1', // Seed post
+      path: `/api/blogs/${seedPostId}`, // Seed post
       token: token1,
       body: { title: 'Overwriting Seed Post' }
     });
@@ -469,8 +471,8 @@ async function runBlogTests() {
       ok('Original seed posts cannot be modified (HTTP 403)');
     } else fail('Seed post modification was not rejected with 403');
 
-    // 4.6 Direct SQL ownership constraint test (Audit check)
-    const directSqlUpdate = await Blog.updateBlog(createdBlog1.id, 99999, { title: 'Direct SQL Bypass' });
+    // 4.6 Direct ownership constraint test (Audit check)
+    const directSqlUpdate = await Blog.updateBlog(createdBlog1.id, '507f1f77bcf86cd799439099', { title: 'Direct SQL Bypass' });
     if (directSqlUpdate === null) {
       ok('Direct SQL updateBlog enforces author_id condition and returns null for mismatched owner');
     } else fail('Direct SQL update bypassed author_id condition!');
@@ -501,15 +503,15 @@ async function runBlogTests() {
     // 5.3 Original seed posts cannot be deleted
     const seedDelete = await apiRequest({
       method: 'DELETE',
-      path: '/api/blogs/1', // Seed post
+      path: `/api/blogs/${seedPostId}`, // Seed post
       token: token1
     });
     if (seedDelete.status === 403 && seedDelete.data?.message.includes('Original seeded posts')) {
       ok('Original seed posts cannot be deleted (HTTP 403)');
     } else fail('Seed post deletion was not rejected with 403');
 
-    // 5.4 Direct SQL delete ownership constraint test (Audit check)
-    const directSqlDelete = await Blog.deleteBlog(createdBlog1.id, 99999);
+    // 5.4 Direct delete ownership constraint test (Audit check)
+    const directSqlDelete = await Blog.deleteBlog(createdBlog1.id, '507f1f77bcf86cd799439099');
     if (directSqlDelete === false) {
       ok('Direct SQL deleteBlog enforces author_id condition and returns false for mismatched owner');
     } else fail('Direct SQL delete bypassed author_id condition!');
@@ -541,20 +543,15 @@ async function runBlogTests() {
     } else fail('Password field found in blog object!');
 
   } finally {
+    try {
+      await User.deleteMany({ email: { $in: ['author1@test.com', 'author2@test.com'] } });
+      await Blog.deleteMany({ author: { $in: ['Author One', 'Author Two'] } });
+    } catch (e) {}
     if (serverInstance) {
       serverInstance.close();
     }
     await closeDatabase();
-
-    const resolvedTestDb = path.resolve(__dirname, TEST_DB_PATH);
-    if (fs.existsSync(resolvedTestDb)) {
-      try {
-        fs.unlinkSync(resolvedTestDb);
-        console.log('\n🧹 Isolated test database safely removed:', TEST_DB_PATH);
-      } catch (err) {
-        console.warn('Note: Could not remove test database file:', err.message);
-      }
-    }
+    console.log('\n🧹 Test data safely cleaned up');
   }
 
   // ── Summary ──

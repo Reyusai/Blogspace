@@ -157,7 +157,7 @@
 
         // Show edit button if current authenticated user is the owner
         const currentUser = window.api.getUser();
-        if (currentUser && currentUser.id === blog.author_id) {
+        if (currentUser && String(currentUser.id) === String(blog.author_id)) {
           const ownerActions = document.getElementById('ownerActions');
           const editLink = document.getElementById('editLink');
           ownerActions.hidden = false;

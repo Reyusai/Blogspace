@@ -4,6 +4,7 @@
  */
 
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const { initializeDatabase } = require('./config/database');
@@ -14,6 +15,9 @@ const PORT = process.env.PORT || 5000;
 // ==========================================
 // Middleware Configuration
 // ==========================================
+
+// Serve static frontend files from project root
+app.use(express.static(path.resolve(__dirname, '..')));
 
 // CORS Configuration
 // - Development: allow all origins so localhost works without friction

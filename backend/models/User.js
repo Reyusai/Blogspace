@@ -1,34 +1,74 @@
 /**
- * models/User.js – User Model and Database Queries
+ * models/User.js – User Model and Mongoose Schema
  * ─────────────────────────────────────────────────
  * WHY THIS FILE EXISTS:
  *   Acts as the Data Access Layer (DAL) for users.
- *   Encapsulates all SQL queries related to the `users` table
- *   so controllers never write raw SQL.
+ *   Encapsulates all MongoDB operations related to the `users` collection
+ *   using Mongoose schemas and models.
  *
  * SECURITY PRACTICES:
- *   • Always uses parameterized queries (?, ?) to prevent SQL injection.
- *   • Helper methods return only safe user projections (excluding password)
- *     unless specifically querying for authentication.
+ *   • Passwords are encrypted before storage and never returned in safe queries.
+ *   • Enforces unique, lowercase email addresses with trimmed values.
+ *   • Maps MongoDB `_id` to `id` string for API contract consistency.
  */
 
-const { dbRun, dbGet } = require('../config/database');
+const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, 'Name is required'],
+      trim: true
+    },
+    email: {
+      type: String,
+      required: [true, 'Email is required'],
+      unique: true,
+      trim: true,
+      lowercase: true,
+      index: true
+    },
+    password: {
+      type: String,
+      required: [true, 'Password is required']
+    },
+    created_at: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  {
+    timestamps: false,
+    versionKey: false,
+    toJSON: {
+      transform: (doc, ret) => {
+        ret.id = ret._id ? ret._id.toString() : doc.id;
+        delete ret._id;
+        delete ret.__v;
+        return ret;
+      }
+    },
+    toObject: {
+      transform: (doc, ret) => {
+        ret.id = ret._id ? ret._id.toString() : doc.id;
+        delete ret._id;
+        delete ret.__v;
+        return ret;
+      }
+    }
+  }
+);
+
+const User = mongoose.models.User || mongoose.model('User', userSchema);
 
 /**
- * Create the users table if it does not already exist.
- * Safe to run on every server restart.
+ * Ensure user indexes (e.g. unique email) are initialized.
+ * Replaces old createUsersTable() from SQLite.
  */
 async function createUsersTable() {
-  await dbRun(`
-    CREATE TABLE IF NOT EXISTS users (
-      id         INTEGER  PRIMARY KEY AUTOINCREMENT,
-      name       TEXT     NOT NULL,
-      email      TEXT     NOT NULL UNIQUE,
-      password   TEXT     NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-  console.log('  ✓ users table ready');
+  await User.init();
+  console.log('  ✓ users collection ready');
 }
 
 /**
@@ -36,45 +76,62 @@ async function createUsersTable() {
  * Used internally during login verification.
  * 
  * @param {string} email - Normalized lowercase email address
- * @returns {Promise<Object|null>} Full user row or null
+ * @returns {Promise<Object|null>} Full user object or null
  */
 async function findByEmail(email) {
-  const row = await dbGet('SELECT * FROM users WHERE email = ?', [email]);
-  return row || null;
+  if (!email) return null;
+  const user = await User.findOne({ email: email.trim().toLowerCase() }).exec();
+  if (!user) return null;
+  return {
+    id: user._id.toString(),
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    password: user.password,
+    created_at: user.created_at
+  };
 }
 
 /**
  * Find a safe user by ID (excludes password hash).
  * Used by auth middleware and profile lookups.
  * 
- * @param {number} id - User ID
+ * @param {string|number} id - User ID (ObjectId string)
  * @returns {Promise<Object|null>} Safe user object or null
  */
 async function findById(id) {
-  const row = await dbGet(
-    'SELECT id, name, email, created_at FROM users WHERE id = ?',
-    [id]
-  );
-  return row || null;
+  if (!id) return null;
+  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+
+  const user = await User.findById(id).select('-password').exec();
+  if (!user) return null;
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    created_at: user.created_at
+  };
 }
 
 /**
  * Insert a new user into the database.
  * 
  * @param {Object} userData - { name, email, password (hashed) }
- * @returns {Promise<Object>} Created user object (excluding password)
+ * @returns {Promise<Object>} Created safe user object (excluding password)
  */
 async function createUser({ name, email, password }) {
-  const result = await dbRun(
-    'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
-    [name, email, password]
-  );
+  const user = new User({
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    password
+  });
+  await user.save();
 
   return {
-    id: result.lastID,
-    name,
-    email,
-    created_at: new Date().toISOString()
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    created_at: user.created_at
   };
 }
 
@@ -84,11 +141,18 @@ async function createUser({ name, email, password }) {
  */
 function toSafeUser(user) {
   if (!user) return null;
-  const { password, ...safeUser } = user;
+  const safeUser = { ...user };
+  delete safeUser.password;
+  delete safeUser._id;
+  delete safeUser.__v;
+  if (!safeUser.id && user._id) {
+    safeUser.id = user._id.toString();
+  }
   return safeUser;
 }
 
 module.exports = {
+  User,
   createUsersTable,
   findByEmail,
   findById,
