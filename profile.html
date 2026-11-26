@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profile – BlogSpace</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <nav class="navbar">
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="dashboard.html" class="auth-user">Dashboard</a></li>
+        <li><a href="create-blog.html" class="auth-user">New Post</a></li>
+        <li><a href="profile.html" class="auth-user">Profile</a></li>
+        <li><a href="login.html" class="guest-user">Login</a></li>
+        <li><a href="register.html" class="guest-user">Register</a></li>
+        <li><a href="#" id="logoutBtn" class="auth-user">Logout</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main class="container">
+    <h1>My Profile</h1>
+    <section id="profileInfo" class="card">
+      <p><strong>Name:</strong> <span id="profileName"></span></p>
+      <p><strong>Email:</strong> <span id="profileEmail"></span></p>
+      <p><strong>Joined:</strong> <span id="joinedDate"></span></p>
+    </section>
+
+    <section class="card">
+      <h2>Statistics</h2>
+      <p>Total Posts: <span id="statsTotal"></span></p>
+      <p>Published: <span id="statsPublished"></span></p>
+      <p>Drafts: <span id="statsDrafts"></span></p>
+    </section>
+
+    <section class="card">
+      <h2>Update Name</h2>
+      <form id="updateNameForm">
+        <input type="text" id="newName" placeholder="New name" required minlength="1" maxlength="100" />
+        <button type="submit">Save</button>
+      </form>
+      <p id="nameUpdateMsg"></p>
+    </section>
+
+    <section class="card">
+      <h2>Change Password</h2>
+      <form id="changePasswordForm">
+        <input type="password" id="currentPassword" placeholder="Current password" required minlength="8" />
+        <input type="password" id="newPassword" placeholder="New password" required minlength="8" />
+        <input type="password" id="confirmPassword" placeholder="Confirm new password" required minlength="8" />
+        <button type="submit">Update Password</button>
+      </form>
+      <p id="passwordChangeMsg"></p>
+    </section>
+  </main>
+
+  <script src="api.js"></script>
+  <script>
+    const apiClient = new ApiClient();
+    // Load profile on page load
+    async function loadProfile() {
+      try {
+        const user = await apiClient.getMe();
+        document.getElementById('profileName').textContent = user.name;
+        document.getElementById('profileEmail').textContent = user.email;
+        document.getElementById('joinedDate').textContent = new Date(user.created_at).toLocaleDateString();
+        if (user.stats) {
+          document.getElementById('statsTotal').textContent = user.stats.total;
+          document.getElementById('statsPublished').textContent = user.stats.published;
+          document.getElementById('statsDrafts').textContent = user.stats.drafts;
+        }
+      } catch (e) {
+        console.error(e);
+        // redirect to login if not authenticated
+        window.location.href = 'login.html';
+      }
+    }
+
+    document.getElementById('updateNameForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('newName').value.trim();
+      if (!name) return;
+      try {
+        const resp = await apiClient.updateProfile(name);
+        if (resp.success) {
+          document.getElementById('nameUpdateMsg').textContent = 'Name updated successfully.';
+          // refresh displayed name
+          loadProfile();
+        } else {
+          document.getElementById('nameUpdateMsg').textContent = resp.message || 'Update failed.';
+        }
+      } catch (err) {
+        document.getElementById('nameUpdateMsg').textContent = err.message;
+      }
+    });
+
+    document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const currentPassword = document.getElementById('currentPassword').value;
+      const newPassword = document.getElementById('newPassword').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      if (newPassword !== confirmPassword) {
+        document.getElementById('passwordChangeMsg').textContent = 'New passwords do not match.';
+        return;
+      }
+      try {
+        const resp = await apiClient.changePassword(currentPassword, newPassword);
+        if (resp.success) {
+          document.getElementById('passwordChangeMsg').textContent = 'Password changed. Please log in again.';
+          apiClient.logout();
+          setTimeout(() => window.location.href = 'login.html', 1500);
+        } else {
+          document.getElementById('passwordChangeMsg').textContent = resp.message || 'Failed.';
+        }
+      } catch (err) {
+        document.getElementById('passwordChangeMsg').textContent = err.message;
+      }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      apiClient.logout();
+      window.location.href = 'login.html';
+    });
+
+    loadProfile();
+  </script>
+</body>
+</html>

@@ -196,6 +196,26 @@ class ApiClient {
     this.clearAuth();
   }
 
+  // Update user profile (currently only name)
+  async updateProfile(name) {
+    return await this.request('/auth/profile', {
+      method: 'PUT',
+      requiresAuth: true,
+      body: { name }
+    });
+  }
+
+  // Change user password
+  async changePassword(currentPassword, newPassword) {
+    return await this.request('/auth/password', {
+      method: 'PUT',
+      requiresAuth: true,
+      body: { currentPassword, newPassword }
+    });
+  }
+    this.clearAuth();
+  }
+
   // ──────────────────────────────────────────
   // Blog Endpoints
   // ──────────────────────────────────────────
