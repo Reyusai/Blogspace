@@ -151,11 +151,38 @@ function toSafeUser(user) {
   return safeUser;
 }
 
+// Additional user operations
+async function updateName(id, name) {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  if (typeof name !== 'string' || name.trim().length === 0) return null;
+  const updated = await User.findByIdAndUpdate(
+    id,
+    { $set: { name: name.trim() } },
+    { new: true, select: '-password' }
+  ).exec();
+  if (!updated) return null;
+  return {
+    id: updated._id.toString(),
+    name: updated.name,
+    email: updated.email,
+    created_at: updated.created_at
+  };
+}
+
+async function updatePassword(id, newHashedPassword) {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return false;
+  if (typeof newHashedPassword !== 'string' || newHashedPassword.length === 0) return false;
+  const result = await User.updateOne({ _id: id }, { $set: { password: newHashedPassword } }).exec();
+  return result.nModified > 0 || result.modifiedCount > 0;
+}
+
 module.exports = {
   User,
   createUsersTable,
   findByEmail,
   findById,
   createUser,
-  toSafeUser
+  toSafeUser,
+  updateName,
+  updatePassword
 };

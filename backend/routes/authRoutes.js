@@ -22,4 +22,8 @@ router.post('/login', authController.login);
 // Protected endpoints (require valid JWT)
 router.get('/me', authMiddleware, authController.getMe);
 
+// Additional routes for profile and password management
+router.put('/profile', authMiddleware, authController.updateProfile);
+router.put('/password', authMiddleware, authController.changePassword);
+
 module.exports = router;

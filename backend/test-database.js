@@ -35,6 +35,10 @@ async function runTests() {
   console.log('\n── Test 1: MongoDB Connection ──');
   try {
     await initializeDatabase();
+  if (!mongoose.connection.name.endsWith('_test')) {
+    console.error('ERROR: Tests must run against a *_test database. Current db:', mongoose.connection.name);
+    process.exit(1);
+  }
     if (mongoose.connection.readyState === 1) {
       ok(`Connected to MongoDB Atlas: ${mongoose.connection.host}/${mongoose.connection.name}`);
     } else {

@@ -18,6 +18,13 @@ process.env.JWT_SECRET = 'test_suite_jwt_secret_blogspace_super_safe_key_2026';
 process.env.JWT_EXPIRES_IN = '1h';
 
 require('dotenv').config();
+const mongoose=require('mongoose');
+// Switch to a test database name ending with _test
+if (process.env.MONGODB_URI) {
+  const testUri=process.env.MONGODB_URI.replace(/\/[^\/\?]+(?=\?)/, '/blogspace_test');
+  process.env.MONGODB_URI=testUri;
+}
+
 
 const http = require('http');
 const jwt = require('jsonwebtoken');
@@ -98,9 +105,9 @@ async function runBlogTests() {
   console.log('═'.repeat(60));
 
   console.log('📦 Initializing test database');
-  await initializeDatabase();
+  await Blog.deleteMany({});
   await User.deleteMany({ email: { $in: ['author1@test.com', 'author2@test.com'] } });
-  await Blog.deleteMany({ author: { $in: ['Author One', 'Author Two'] } });
+  await initializeDatabase();
 
   await new Promise((resolve) => {
     serverInstance = app.listen(0, () => {

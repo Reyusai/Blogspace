@@ -210,20 +210,95 @@ async function login(req, res, next) {
  * Protected by authMiddleware (req.user is guaranteed to exist).
  */
 async function getMe(req, res) {
-  // req.user was populated safely by authMiddleware without password
-  return res.status(200).json({
-    success: true,
-    user: {
-      id: req.user.id,
-      name: req.user.name,
-      email: req.user.email,
-      created_at: req.user.created_at
+  try {
+    // Fetch user safe data (already set by authMiddleware)
+    const user = req.user;
+    // Compute post statistics
+    const Blog = require('../models/Blog').Blog;
+    const total = await Blog.countDocuments({ author_id: user.id }).exec();
+    const published = await Blog.countDocuments({ author_id: user.id, status: 'published' }).exec();
+    const drafts = await Blog.countDocuments({ author_id: user.id, status: 'draft' }).exec();
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        created_at: user.created_at,
+        stats: { total, published, drafts }
+      }
+    });
+  } catch (error) {
+    console.error('GetMe error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch profile.' });
+  }
+}
+
+
+/**
+ * PUT /api/auth/profile
+ * Update user's profile (currently only name).
+ */
+async function updateProfile(req, res, next) {
+  try {
+    const userId = req.user.id; // authMiddleware sets req.user
+    const { name } = req.body;
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ success:false, message: 'Name is required and must be a non‑empty string.' });
     }
-  });
+    const updated = await require('../models/User').updateName(userId, name.trim());
+    if (!updated) {
+      return res.status(404).json({ success:false, message: 'User not found.' });
+    }
+    return res.status(200).json({ success:true, message:'Profile updated.', user: updated });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    next(error);
+  }
+}
+
+/**
+ * PUT /api/auth/password
+ * Change user's password. Requires current password verification.
+ */
+async function changePassword(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success:false, message: 'Both currentPassword and newPassword are required.' });
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ success:false, message: 'New password must be at least 8 characters long.' });
+    }
+    // fetch user with password hash
+    const User = require('../models/User');
+    const user = await User.findById(userId); // safe version without password
+    // Need original hash, so use findByEmail maybe or a new method. We'll use findById with password via a direct query
+    const fullUser = await User.User.findById(userId).exec(); // access underlying Mongoose model
+    if (!fullUser) {
+      return res.status(404).json({ success:false, message: 'User not found.' });
+    }
+    const isMatch = await require('bcryptjs').compare(currentPassword, fullUser.password);
+    if (!isMatch) {
+      return res.status(400).json({ success:false, message: 'Current password is incorrect.' });
+    }
+    const hashed = await require('bcryptjs').hash(newPassword, 10);
+    const ok = await User.updatePassword(userId, hashed);
+    if (!ok) {
+      return res.status(500).json({ success:false, message: 'Failed to update password.' });
+    }
+    return res.status(200).json({ success:true, message:'Password changed successfully.' });
+  } catch (error) {
+    console.error('Password change error:', error);
+    next(error);
+  }
 }
 
 module.exports = {
   register,
   login,
-  getMe
+  getMe,
+  updateProfile,
+  changePassword
 };
