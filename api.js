@@ -14,7 +14,7 @@
 
 const API_CONFIG = {
   // Configurable base URL: can be overridden via window.BLOGSPACE_API_URL in production
-  BASE_URL: window.BLOGSPACE_API_URL || 'http://localhost:5000/api',
+  BASE_URL: window.BLOGSPACE_API_URL || 'https://onrender.com',
   STORAGE_KEYS: {
     TOKEN: 'blogspace_token',
     SESSION: 'blogspace_session',
